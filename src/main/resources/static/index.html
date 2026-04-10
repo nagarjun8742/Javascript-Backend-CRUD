@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Product CRUD</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f4f6f8; padding: 2rem; color: #222; }
+    h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+    h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+
+    .card {
+      background: #fff;
+      border: 1px solid #dde1e7;
+      border-radius: 10px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 1rem;
+    }
+
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+    }
+
+    input:focus { border-color: #4f6ef7; }
+
+    .btn {
+      padding: 8px 18px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .btn-primary { background: #4f6ef7; color: #fff; }
+    .btn-reset   { background: #e5e7eb; color: #333; margin-left: 8px; }
+    .btn-edit    { background: #f0a500; color: #fff; padding: 4px 12px; font-size: 13px; }
+    .btn-delete  { background: #e53935; color: #fff; padding: 4px 12px; font-size: 13px; margin-left: 6px; }
+
+    #msg { font-size: 13px; color: green; margin-top: 8px; min-height: 18px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th { text-align: left; padding: 10px; background: #f0f2f5; border-bottom: 1px solid #dde1e7; }
+    td { padding: 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+    tr:hover td { background: #f9f9fb; }
+  </style>
+</head>
+<body>
+
+<h1>Product Manager</h1>
+
+<!-- FORM -->
+<div class="card">
+  <h2 id="form-title">Add Product</h2>
+  <div class="form-grid">
+    <input type="text"   id="name"        placeholder="Name"        />
+    <input type="text"   id="description" placeholder="Description" />
+    <input type="number" id="price"       placeholder="Price"       step="0.01" />
+    <input type="number" id="quantity"    placeholder="Quantity"    />
+  </div>
+  <button class="btn btn-primary" onclick="saveProduct()">Save</button>
+  <button class="btn btn-reset"   onclick="resetForm()">Reset</button>
+  <div id="msg"></div>
+</div>
+
+<!-- TABLE -->
+<div class="card">
+  <h2>All Products</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Name</th><th>Description</th>
+        <th>Price</th><th>Qty</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="product-table-body"></tbody>
+  </table>
+</div>
+
+<script>
+  const API = '/api/products';
+  let editingId = null;
+
+  /* ── LOAD ALL ── */
+  async function loadProducts() {
+    const res  = await fetch(API);
+    const data = await res.json();
+    const body = document.getElementById('product-table-body');
+    body.innerHTML = '';
+    data.forEach(p => {
+      body.innerHTML += `
+        <tr>
+          <td>${p.id}</td>
+          <td>${p.name}</td>
+          <td>${p.description ?? '-'}</td>
+          <td>$${p.price?.toFixed(2) ?? '0.00'}</td>
+          <td>${p.quantity ?? 0}</td>
+          <td>
+            <button class="btn btn-edit"   onclick="editProduct(${p.id})">Edit</button>
+            <button class="btn btn-delete" onclick="deleteProduct(${p.id})">Delete</button>
+          </td>
+        </tr>`;
+    });
+  }
+
+  async function saveProduct() {
+    const body = {
+      name:        document.getElementById('name').value.trim(),
+      description: document.getElementById('description').value.trim(),
+      price:       parseFloat(document.getElementById('price').value) || 0,
+      quantity:    parseInt(document.getElementById('quantity').value) || 0
+    };
+
+    if (!body.name) { showMsg('Name is required', 'red'); return; }
+
+    const url    = editingId ? `${API}/${editingId}` : API;
+    const method = editingId ? 'PUT' : 'POST';
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (res.ok) {
+        showMsg(editingId ? 'Product updated!' : 'Product created!');
+        resetForm();
+        loadProducts();
+      } else {
+        // Show actual server error message
+        const errText = await res.text();
+        showMsg(`Error ${res.status}: ${errText}`, 'red');
+        console.error('Server error:', errText);
+      }
+    } catch (err) {
+      // Network/connection error
+      showMsg('Cannot reach server. Is Spring Boot running?', 'red');
+      console.error(err);
+    }
+}
+
+  /* ── EDIT (populate form) ── */
+  async function editProduct(id) {
+    const res  = await fetch(`${API}/${id}`);
+    const data = await res.json();
+    editingId = id;
+    document.getElementById('name').value        = data.name;
+    document.getElementById('description').value = data.description ?? '';
+    document.getElementById('price').value       = data.price ?? '';
+    document.getElementById('quantity').value    = data.quantity ?? '';
+    document.getElementById('form-title').textContent = `Edit Product #${id}`;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* ── DELETE ── */
+  async function deleteProduct(id) {
+    if (!confirm(`Delete product #${id}?`)) return;
+    const res = await fetch(`${API}/${id}`, { method: 'DELETE' });
+    if (res.ok) { showMsg('Deleted!'); loadProducts(); }
+  }
+
+  /* ── HELPERS ── */
+  function resetForm() {
+    editingId = null;
+    ['name','description','price','quantity'].forEach(f =>
+      document.getElementById(f).value = '');
+    document.getElementById('form-title').textContent = 'Add Product';
+    document.getElementById('msg').textContent = '';
+  }
+
+  function showMsg(text, color = 'green') {
+    const el = document.getElementById('msg');
+    el.style.color = color;
+    el.textContent = text;
+    setTimeout(() => el.textContent = '', 3000);
+  }
+
+  // Initial load
+  loadProducts();
+</script>
+</body>
+</html>
